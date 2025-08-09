@@ -13,10 +13,10 @@ logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 
-# Allow CORS from your frontend domain (update after frontend deployed)
+# Allow CORS from your frontend domain (no trailing slash!)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://meeting-summarizer-frontend.netlify.app/"],  # Replace "*" with your frontend URL in production
+    allow_origins=["https://meeting-summarizer-frontend.netlify.app"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
