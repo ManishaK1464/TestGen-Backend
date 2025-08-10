@@ -7,22 +7,26 @@ import httpx
 from dotenv import load_dotenv
 import logging
 
+# Load environment variables from .env
 load_dotenv()
+
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 
-# Update this with your actual frontend URL(s)
+# Replace with your actual frontend deployed URL
+FRONTEND_URL = "https://meeting-summarizer-frontend.netlify.app"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://your-frontend-url.netlify.app"],
+    allow_origins=[FRONTEND_URL],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
-    raise ValueError("Missing GROQ_API_KEY. Please set it in .env")
+    raise ValueError("Missing GROQ_API_KEY. Please set it in your .env file")
 
 class AnalysisRequest(BaseModel):
     datasheet_text: str
@@ -31,7 +35,10 @@ class AnalysisRequest(BaseModel):
 
 async def call_groq_api(datasheet_text: str, log_text: str, query: str):
     url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
 
     prompt = f"""
 You are an engineering assistant. Given the datasheet content and optional device logs:
@@ -52,7 +59,7 @@ User query:
 
     payload = {
         "model": "llama3-70b-8192",
-        "messages": [{"role": "user", "content": prompt}]
+        "messages": [{"role": "user", "content": prompt}],
     }
 
     async with httpx.AsyncClient(timeout=15) as client:
@@ -65,12 +72,15 @@ async def analyze_device(req: AnalysisRequest):
     logging.info("Received analysis request")
     try:
         result = await call_groq_api(req.datasheet_text, req.log_text, req.query)
-        return {
-            "analysis": result["choices"][0]["message"]["content"]
-        }
+        return {"analysis": result["choices"][0]["message"]["content"]}
     except httpx.HTTPStatusError as e:
         logging.error(f"HTTP error: {e}")
         raise HTTPException(status_code=e.response.status_code, detail=str(e))
     except Exception as e:
         logging.error(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
