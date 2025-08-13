@@ -62,7 +62,7 @@ async def generate_testcases(req: GenerateRequest = Body(...)):
     logging.info(f"Generating testcases for requirement: {req.requirement_description}")
 
     prompt = f"""
-You are a QA engineer. Given the software requirement below, generate 3 example test cases.
+You are a QA engineer. Given the software requirement below, generate 5 example test cases.
 
 Each test case should have the following fields in JSON:
 - id: unique string ID (can be numeric or UUID)
