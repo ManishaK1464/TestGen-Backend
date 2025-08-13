@@ -1,86 +1,118 @@
-# main.py
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Body
 from pydantic import BaseModel
 import os
 import httpx
 from dotenv import load_dotenv
 import logging
+import json
+from fastapi.middleware.cors import CORSMiddleware
+import uuid
 
-# Load environment variables from .env
 load_dotenv()
-
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 
-# Replace with your actual frontend deployed URL
-FRONTEND_URL = "https://meeting-summarizer-frontend.netlify.app"
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL],
+    allow_origins=origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
-    raise ValueError("Missing GROQ_API_KEY. Please set it in your .env file")
+    raise ValueError("Missing GROQ_API_KEY")
 
-class AnalysisRequest(BaseModel):
-    datasheet_text: str
-    log_text: str = None
-    query: str = None
+class Testcase(BaseModel):
+    id: str
+    title: str
+    description: str
+    steps: str = ""
+    expected_result: str = ""
+    priority: str = "Medium"
+    status: str = "Open"
 
-async def call_groq_api(datasheet_text: str, log_text: str, query: str):
+class GenerateRequest(BaseModel):
+    requirement_description: str
+
+async def call_groq_api(prompt: str):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json",
     }
-
-    prompt = f"""
-You are an engineering assistant. Given the datasheet content and optional device logs:
-1. Identify relevant commands and register settings.
-2. If logs are provided, match errors with possible causes from the datasheet.
-3. Generate example commands/code to fix or configure the device.
-4. Keep output in a structured JSON format: {{ "commands": [...], "errors": [...], "suggestions": [...] }}
-
-Datasheet:
-{datasheet_text}
-
-Logs:
-{log_text if log_text else "No logs provided"}
-
-User query:
-{query if query else "No specific query"}
-"""
-
     payload = {
         "model": "llama3-70b-8192",
         "messages": [{"role": "user", "content": prompt}],
     }
-
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=20) as client:
         response = await client.post(url, json=payload, headers=headers)
         response.raise_for_status()
         return response.json()
 
-@app.post("/analyze_device")
-async def analyze_device(req: AnalysisRequest):
-    logging.info("Received analysis request")
-    try:
-        result = await call_groq_api(req.datasheet_text, req.log_text, req.query)
-        return {"analysis": result["choices"][0]["message"]["content"]}
-    except httpx.HTTPStatusError as e:
-        logging.error(f"HTTP error: {e}")
-        raise HTTPException(status_code=e.response.status_code, detail=str(e))
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+@app.post("/generate-testcases")
+async def generate_testcases(req: GenerateRequest = Body(...)):
+    logging.info(f"Generating testcases for requirement: {req.requirement_description}")
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    prompt = f"""
+You are a QA engineer. Given the software requirement below, generate 3 example test cases.
+
+Each test case should have the following fields in JSON:
+- id: unique string ID (can be numeric or UUID)
+- title: short descriptive title
+- description: detailed description of what to test
+- steps: ordered steps to execute the test
+- expected_result: what the expected outcome should be
+- priority: High, Medium, or Low
+- status: Open, In Progress, or Closed
+
+Return the response as a JSON array of these test case objects ONLY, no extra text.
+
+Requirement:
+{req.requirement_description}
+"""
+
+    try:
+        result = await call_groq_api(prompt)
+        content = result["choices"][0]["message"]["content"]
+
+        # Try to parse JSON from AI response
+        try:
+            testcases_raw = json.loads(content)
+            # Validate each testcase object or assign defaults if fields missing
+            testcases = []
+            for tc in testcases_raw:
+                testcases.append({
+                    "id": tc.get("id") or str(uuid.uuid4()),
+                    "title": tc.get("title") or "No Title",
+                    "description": tc.get("description") or "",
+                    "steps": tc.get("steps") or "",
+                    "expected_result": tc.get("expected_result") or "",
+                    "priority": tc.get("priority") if tc.get("priority") in ["High", "Medium", "Low"] else "Medium",
+                    "status": tc.get("status") if tc.get("status") in ["Open", "In Progress", "Closed"] else "Open",
+                })
+        except (json.JSONDecodeError, TypeError) as e:
+            logging.warning(f"Failed to parse JSON from Groq response: {e}")
+            # Fallback: return a generic single test case with raw text
+            testcases = [{
+                "id": str(uuid.uuid4()),
+                "title": "Parsing Error - raw output",
+                "description": content,
+                "steps": "",
+                "expected_result": "",
+                "priority": "Medium",
+                "status": "Open"
+            }]
+
+        return {"testcases": testcases}
+
+    except Exception as e:
+        logging.error(f"Error generating testcases: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
