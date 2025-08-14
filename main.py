@@ -5,30 +5,31 @@ import httpx
 from dotenv import load_dotenv
 import logging
 import json
-from fastapi.middleware.cors import CORSMiddleware
 import uuid
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+from fastapi.middleware.cors import CORSMiddleware
+
+# Load environment variables
 load_dotenv()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    raise ValueError("Missing GROQ_API_KEY")
+
+# Logging
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI()
+# Initialize FastAPI app
+app = FastAPI(title="IEM Test Case Generator")
 
-origins = [
-   FRONTEND_URL
-]
-
+# Simple CORS: allow any origin (works with Netlify)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["https://testgen-frontend.netlify.app/"],  # For stricter security, replace "*" with your Netlify URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-if not GROQ_API_KEY:
-    raise ValueError("Missing GROQ_API_KEY")
-
+# Pydantic models
 class Testcase(BaseModel):
     id: str
     title: str
@@ -41,6 +42,7 @@ class Testcase(BaseModel):
 class GenerateRequest(BaseModel):
     requirement_description: str
 
+# Call Groq API asynchronously
 async def call_groq_api(prompt: str):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -56,6 +58,7 @@ async def call_groq_api(prompt: str):
         response.raise_for_status()
         return response.json()
 
+# Endpoint to generate test cases
 @app.post("/generate-testcases")
 async def generate_testcases(req: GenerateRequest = Body(...)):
     logging.info(f"Generating testcases for requirement: {req.requirement_description}")
@@ -85,7 +88,6 @@ Requirement:
         # Try to parse JSON from AI response
         try:
             testcases_raw = json.loads(content)
-            # Validate each testcase object or assign defaults if fields missing
             testcases = []
             for tc in testcases_raw:
                 testcases.append({
@@ -99,7 +101,6 @@ Requirement:
                 })
         except (json.JSONDecodeError, TypeError) as e:
             logging.warning(f"Failed to parse JSON from Groq response: {e}")
-            # Fallback: return a generic single test case with raw text
             testcases = [{
                 "id": str(uuid.uuid4()),
                 "title": "Parsing Error - raw output",
