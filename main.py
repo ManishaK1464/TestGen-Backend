@@ -7,7 +7,7 @@ import logging
 import json
 from fastapi.middleware.cors import CORSMiddleware
 import uuid
-FRONTEND_URL = os.getenv("https://testgen-frontend.netlify.app/", "http://localhost:5173")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
