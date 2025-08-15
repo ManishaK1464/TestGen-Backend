@@ -23,7 +23,7 @@ app = FastAPI(title="IEM Test Case Generator")
 # Simple CORS: allow any origin (works with Netlify)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://testgen-frontend.netlify.app"],  # For stricter security, replace "*" with your Netlify URL
+    allow_origins=["https://testgen-frontend.netlify.app", "http://localhost:5173" ], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
