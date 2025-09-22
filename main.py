@@ -50,7 +50,7 @@ async def call_groq_api(prompt: str):
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "llama3-70b-8192",
+        "model": "openai/gpt-oss-20b",
         "messages": [{"role": "user", "content": prompt}],
     }
     async with httpx.AsyncClient(timeout=20) as client:
